@@ -97,12 +97,11 @@ for i, wp in enumerate(st.session_state.waypoints):
 # 显示地图并获取用户绘制结果
 map_data = st_folium(m, width=1200, height=600)
 
-# 处理用户绘制的元素
-if map_data and "all_drawings" in map_data:
+# 处理用户绘制的元素（修复点：加None判断）
+new_obstacles = []
+new_waypoints = []
+if map_data and "all_drawings" in map_data and map_data["all_drawings"] is not None:
     drawings = map_data["all_drawings"]
-    new_obstacles = []
-    new_waypoints = []
-
     for d in drawings:
         if d["geometry"]["type"] in ["Polygon", "Rectangle"]:
             coords = d["geometry"]["coordinates"][0]
@@ -112,10 +111,10 @@ if map_data and "all_drawings" in map_data:
             latlng = (d["geometry"]["coordinates"][1], d["geometry"]["coordinates"][0])
             new_waypoints.append(latlng)
 
-    # 安全距离检测（简化版）
     st.session_state.obstacles = new_obstacles
     st.session_state.waypoints = new_waypoints
 
+if len(new_obstacles) > 0 or len(new_waypoints) > 0:
     st.success(f"✅ 障碍物：{len(new_obstacles)} 个 | ✅ 航点：{len(new_waypoints)} 个")
 
 # 飞行模拟逻辑
