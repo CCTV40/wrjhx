@@ -14,12 +14,13 @@ st.set_page_config(page_title="无人机智能避障航线规划", layout="wide"
 if "obstacles" not in st.session_state:
     st.session_state.obstacles = json.loads(st.session_state.get("saved_obstacles", "[]"))
 if "waypoints" not in st.session_state:
-    st.session_state.waypoints = []
+    st.session_state.waypoints = json.loads(st.session_state.get("saved_waypoints", "[]"))
 if "safe_radius" not in st.session_state:
     st.session_state.safe_radius = 15
 
 def save_data():
     st.session_state["saved_obstacles"] = json.dumps(st.session_state.obstacles)
+    st.session_state["saved_waypoints"] = json.dumps(st.session_state.waypoints)
 
 # ========================== 飞行状态 ==========================
 if "flying" not in st.session_state:
@@ -97,14 +98,16 @@ with c1:
         st.session_state.obstacles = []
         save_data()
 with c2:
-    if st.button("📍 重置航点"):
+    if st.button("🧹 清空航点"):
         st.session_state.waypoints = []
+        save_data()
 with c3:
     if st.button("🛣️ 自动规划避障航线"):
         if len(st.session_state.waypoints) >= 2:
             start = st.session_state.waypoints[0]
             end = st.session_state.waypoints[-1]
             st.session_state.waypoints = find_safe_route(start, end, st.session_state.obstacles, safe_radius)
+            save_data()
         else:
             st.warning("请先添加起点和终点！")
 with c4:
@@ -128,7 +131,7 @@ m5.metric("预计到达", str(timedelta(seconds=eta)))
 m6.metric("剩余电量", f"{bat} %")
 
 # ========================== 地图 ==========================
-st.subheader("🗺️ 地图操作：画障碍物 → 加2个航点 → 自动绕开规划航线")
+st.subheader("🗺️ 地图操作：画障碍物 → 加航点 → 自动避障规划航线")
 m = folium.Map(location=[NPI_LAT, NPI_LON], zoom_start=17, tiles="Esri WorldImagery")
 
 Draw(export=False,
@@ -157,23 +160,25 @@ for i, wp in enumerate(st.session_state.waypoints):
 
 data = st_folium(m, width=1200, height=600)
 
-# ========================== 读取地图数据 ==========================
+# ========================== 【核心修复：追加模式，不覆盖】 ==========================
 try:
     if data and "all_drawings" in data and data["all_drawings"]:
-        temp_obs = []
-        temp_wp = []
         for o in data["all_drawings"]:
             geo = o["geometry"]
+            # 航点：追加，不覆盖
             if geo["type"] == "Point":
-                lat = geo["coordinates"][1]
-                lng = geo["coordinates"][0]
-                temp_wp.append((lat, lng))
+                lat = round(geo["coordinates"][1], 6)
+                lng = round(geo["coordinates"][0], 6)
+                point = (lat, lng)
+                if point not in st.session_state.waypoints:
+                    st.session_state.waypoints.append(point)
+                    save_data()
+            # 障碍物：追加，不覆盖
             if geo["type"] in ["Polygon", "Rectangle"]:
-                pts = [(p[1], p[0]) for p in geo["coordinates"][0]]
-                temp_obs.append(pts)
-        st.session_state.obstacles = temp_obs
-        st.session_state.waypoints = temp_wp
-        save_data()
+                pts = [(round(p[1],6), round(p[0],6)) for p in geo["coordinates"][0]]
+                if pts not in st.session_state.obstacles and len(pts) > 3:
+                    st.session_state.obstacles.append(pts)
+                    save_data()
 except:
     pass
 
@@ -188,4 +193,4 @@ if idx >= len(st.session_state.waypoints)-1 and len(st.session_state.waypoints)>
     st.success("✅ 飞行任务完成！")
     st.session_state.flying = False
 
-st.success(f"障碍物：{len(st.session_state.obstacles)} 个｜航点：{len(st.session_state.waypoints)} 个｜安全半径：{safe_radius}米")
+st.success(f"✅ 障碍物：{len(st.session_state.obstacles)} 个｜ 航点：{len(st.session_state.waypoints)} 个｜ 安全半径：{safe_radius}米")
