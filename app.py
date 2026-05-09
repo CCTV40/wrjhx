@@ -2,16 +2,15 @@ import streamlit as st
 import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
-import numpy as np
 import time
 
 st.set_page_config(page_title="无人机航线规划", layout="wide")
 
-# 初始化session状态
+# 初始化状态（确保不会清空历史航点）
 if "obstacles" not in st.session_state:
     st.session_state.obstacles = []
 if "waypoints" not in st.session_state:
-    st.session_state.waypoints = []
+    st.session_state.waypoints = []  # 多个航点列表
 if "flying" not in st.session_state:
     st.session_state.flying = False
 if "current_wp_idx" not in st.session_state:
@@ -19,111 +18,81 @@ if "current_wp_idx" not in st.session_state:
 if "fly_time" not in st.session_state:
     st.session_state.fly_time = 0
 
-# 配置参数
-SAFE_RADIUS = 10  # 安全半径（米）
-FLY_SPEED = 8.0   # 飞行速度（m/s）
 # 南京科技职业学院坐标
 NPI_LAT = 32.2341
 NPI_LON = 118.7494
+FLY_SPEED = 8.0
 
-# 标题与控制按钮
-st.title("📡 无人机航线规划与安全监控 Demo（南京科技职业学院）")
-col_btn = st.columns(4)
-with col_btn[0]:
-    if st.button("🖌️ 绘制障碍物"):
-        st.info("在地图上使用Draw工具绘制多边形障碍物")
-with col_btn[1]:
-    if st.button("📍 重置航点"):
+# 界面
+st.title("📡 无人机航线规划（南京科技职业学院）")
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.info("左侧工具栏点 📍 标记添加航点")
+with col2:
+    if st.button("🧹 清空航点"):
         st.session_state.waypoints = []
-with col_btn[2]:
-    if st.button("🚀 开始模拟飞行"):
+with col3:
+    if st.button("🚀 开始飞行"):
         if len(st.session_state.waypoints) >= 2:
             st.session_state.flying = True
             st.session_state.current_wp_idx = 0
             st.session_state.fly_time = 0
         else:
-            st.warning("请先在地图上添加至少2个航点！")
-with col_btn[3]:
-    if st.button("🧹 清空全部"):
-        st.session_state.obstacles = []
-        st.session_state.waypoints = []
+            st.warning("至少需要2个航点！")
+with col4:
+    if st.button("⏹ 停止飞行"):
         st.session_state.flying = False
-        st.session_state.current_wp_idx = 0
-        st.session_state.fly_time = 0
 
-# 飞行监控面板
+# 监控面板
 st.subheader("📊 飞行监控")
-col_monitor = st.columns(4)
-with col_monitor[0]:
-    st.metric("当前航点", f"{st.session_state.current_wp_idx+1}/{len(st.session_state.waypoints)}")
-with col_monitor[1]:
-    st.metric("飞行速度", f"{FLY_SPEED} m/s")
-with col_monitor[2]:
-    st.metric("已用时间", f"{st.session_state.fly_time} s")
-with col_monitor[3]:
-    battery = max(0, 100 - st.session_state.current_wp_idx * 5)
-    st.metric("电量", f"{battery} %")
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("当前航点", f"{st.session_state.current_wp_idx+1}/{len(st.session_state.waypoints)}")
+m2.metric("速度", f"{FLY_SPEED} m/s")
+m3.metric("已用时间", f"{st.session_state.fly_time}s")
+battery = max(0, 100 - st.session_state.current_wp_idx * 6)
+m4.metric("电量", f"{battery}%")
 
-# 创建地图（定位在南京科技职业学院）
-st.subheader("🗺️ 飞行区域 - 南京科技职业学院")
-m = folium.Map(
-    location=[NPI_LAT, NPI_LON],
-    zoom_start=16,
-    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attr="Tiles &copy; Esri"
-)
+# 地图
+st.subheader("🗺️ 地图")
+m = folium.Map(location=[NPI_LAT, NPI_LON], zoom_start=17, tiles="Esri WorldImagery")
+Draw(export=True).add_to(m)
 
-# 添加绘制控件（障碍区圈选）
-draw = Draw(
-    draw_options={
-        "polygon": True,
-        "rectangle": True,
-        "polyline": False,
-        "circle": False,
-        "marker": True,
-        "circlemarker": False
-    },
-    edit_options={"edit": True, "remove": True}
-)
-draw.add_to(m)
-
-# 添加已有的障碍物和航点
-for obs in st.session_state.obstacles:
-    folium.Polygon(obs, color="red", fill=True, fill_opacity=0.2).add_to(m)
+# 绘制所有航点 + 航线
+if len(st.session_state.waypoints) >= 2:
+    folium.PolyLine(
+        st.session_state.waypoints,
+        color="blue", weight=5, opacity=0.8
+    ).add_to(m)
 
 for i, wp in enumerate(st.session_state.waypoints):
-    folium.Marker(wp, tooltip=f"航点{i+1}").add_to(m)
+    folium.CircleMarker(
+        location=wp, radius=6, color="blue", fill=True, popup=f"航点{i+1}"
+    ).add_to(m)
 
-# 显示地图并获取用户绘制结果
+# 显示地图
 map_data = st_folium(m, width=1200, height=600)
 
-# 处理用户绘制的元素（修复点：加None判断）
-new_obstacles = []
-new_waypoints = []
+# --------------- 关键修复：追加航点，不覆盖 ---------------
 if map_data and "all_drawings" in map_data and map_data["all_drawings"] is not None:
-    drawings = map_data["all_drawings"]
-    for d in drawings:
-        if d["geometry"]["type"] in ["Polygon", "Rectangle"]:
-            coords = d["geometry"]["coordinates"][0]
-            latlngs = [(coord[1], coord[0]) for coord in coords]
-            new_obstacles.append(latlngs)
-        elif d["geometry"]["type"] == "Point":
-            latlng = (d["geometry"]["coordinates"][1], d["geometry"]["coordinates"][0])
-            new_waypoints.append(latlng)
+    for item in map_data["all_drawings"]:
+        if item["geometry"]["type"] == "Point":
+            lat = item["geometry"]["coordinates"][1]
+            lng = item["geometry"]["coordinates"][0]
+            point = (lat, lng)
 
-    st.session_state.obstacles = new_obstacles
-    st.session_state.waypoints = new_waypoints
+            # 不重复添加
+            if point not in st.session_state.waypoints:
+                st.session_state.waypoints.append(point)
 
-if len(new_obstacles) > 0 or len(new_waypoints) > 0:
-    st.success(f"✅ 障碍物：{len(new_obstacles)} 个 | ✅ 航点：{len(new_waypoints)} 个")
-
-# 飞行模拟逻辑
-if st.session_state.flying and st.session_state.current_wp_idx < len(st.session_state.waypoints):
+# 飞行模拟
+if st.session_state.flying and st.session_state.current_wp_idx < len(st.session_state.waypoints)-1:
     st.session_state.current_wp_idx += 1
     st.session_state.fly_time += 1
-    time.sleep(1)
-    st.experimental_rerun()
+    time.sleep(0.8)
+    st.rerun()
 
-if st.session_state.current_wp_idx >= len(st.session_state.waypoints) and len(st.session_state.waypoints) > 0:
-    st.success("🎉 飞行任务已完成！")
+if st.session_state.current_wp_idx >= len(st.session_state.waypoints)-1 and len(st.session_state.waypoints) >= 2:
+    st.success("✅ 飞行任务完成！")
     st.session_state.flying = False
+
+st.success(f"✅ 当前航点数量：{len(st.session_state.waypoints)}")
