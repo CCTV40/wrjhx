@@ -8,7 +8,7 @@ from datetime import timedelta
 
 st.set_page_config(page_title="无人机真正区域自动避障", layout="wide")
 
-# 状态初始化
+# -------------------------- 状态初始化 --------------------------
 if "waypoints" not in st.session_state:
     st.session_state.waypoints = []
 if "obstacles" not in st.session_state:
@@ -20,13 +20,13 @@ if "curr_idx" not in st.session_state:
 if "fly_time" not in st.session_state:
     st.session_state.fly_time = 0
 
-# 基础参数
+# -------------------------- 基础参数 --------------------------
 LAT_SCH = 32.2341
 LON_SCH = 118.7494
 FLY_SPEED = 8.0
-SAFE_M = 25
+SAFE_M = 25  # 障碍物安全距离（米）
 
-# -------------------------- 工具函数 --------------------------
+# -------------------------- 核心算法：区域避障 --------------------------
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
     dLat = math.radians(lat2 - lat1)
@@ -49,20 +49,18 @@ def point_in_polygon(pt, polygon):
                 inside = not inside
     return inside
 
-# 判断一个点是否靠近任意障碍物（含内部+安全距离）
+# 判断一个点是否被障碍物阻挡（含内部+安全距离）
 def is_point_blocked(pt, obstacles, safe_m):
     lat, lon = pt
     for poly in obstacles:
-        # 在障碍物内部 直接阻塞
         if point_in_polygon(pt, poly):
             return True
-        # 在障碍物周边安全范围内 也阻塞
         for (olat, olon) in poly:
             if haversine(lat, lon, olat, olon) < safe_m:
                 return True
     return False
 
-# 检测两点连线是否穿过障碍物
+# 检测两点连线是否被阻挡
 def is_line_blocked(p1, p2, obstacles, safe_m):
     lat1, lon1 = p1
     lat2, lon2 = p2
